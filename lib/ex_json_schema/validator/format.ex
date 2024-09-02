@@ -37,26 +37,26 @@ defmodule ExJsonSchema.Validator.Format do
   # @z_anchor ~r/[^\\]\\Z/
 
   @impl ExJsonSchema.Validator
-  def validate(root, _, {"format", format}, data, _) do
-    do_validate(root, format, data)
+  def validate(root, schema, {"format", format}, data, _) do
+    do_validate(root, schema, format, data)
   end
 
-  def validate(_, _, _, _, _) do
+  def validate(_, _, _, _) do
     []
   end
 
-  defp do_validate(_, _, data) when not is_bitstring(data) do
+  defp do_validate(_, _, _, data) when not is_bitstring(data) do
     []
   end
 
-  defp do_validate(_, "date" = format, data) do
+  defp do_validate(_, _, "date" = format, data) do
     case Date.from_iso8601(data) do
       {:ok, %Date{}} -> []
       _ -> [%Error{error: %Error.Format{expected: format}}]
     end
   end
 
-  defp do_validate(_, "date-time" = format, data) do
+  defp do_validate(_, _, "date-time" = format, data) do
     data
     |> String.upcase()
     |> NaiveDateTime.from_iso8601()
@@ -66,7 +66,7 @@ defmodule ExJsonSchema.Validator.Format do
     end
   end
 
-  defp do_validate(_, format, data)
+  defp do_validate(_, _, format, data)
        when format in [
               "email",
               "idn-email",
@@ -89,32 +89,33 @@ defmodule ExJsonSchema.Validator.Format do
     end
   end
 
-  defp do_validate(_, "regex", data) do
+  defp do_validate(_, _, "regex", data) do
     case Regex.compile(data) do
       {:ok, _} -> []
       {:error, _} -> [%Error{error: %Error.Format{expected: "regex"}}]
     end
   end
 
-  defp do_validate(%Root{custom_format_validator: nil}, format, data) do
+  defp do_validate(%Root{custom_format_validator: nil}, schema, format, data) do
     case Application.fetch_env(:ex_json_schema, :custom_format_validator) do
       :error -> []
-      {:ok, validator = {_mod, _fun}} -> validate_with_custom_validator(validator, format, data)
+      {:ok, validator = {_mod, _fun}} -> validate_with_custom_validator(validator, schema, format, data)
     end
   end
 
-  defp do_validate(%Root{custom_format_validator: validator = {_mod, _fun}}, format, data) do
-    validate_with_custom_validator(validator, format, data)
+  defp do_validate(%Root{custom_format_validator: validator = {_mod, _fun}}, schema, format, data) do
+    validate_with_custom_validator(validator, schema, format, data)
   end
 
-  defp do_validate(%Root{custom_format_validator: validator}, format, data) when is_function(validator) do
-    validate_with_custom_validator(validator, format, data)
+  defp do_validate(%Root{custom_format_validator: validator}, schema, format, data) when is_function(validator) do
+    validate_with_custom_validator(validator, schema, format, data)
   end
 
-  defp validate_with_custom_validator(validator, format, data) do
+  defp validate_with_custom_validator(validator, schema, format, data) do
     result = case validator do
       {mod, fun} -> apply(mod, fun, [format, data])
       fun when is_function(fun, 2) -> fun.(format, data)
+      fun when is_function(fun, 3) -> fun.(format, data, schema)
     end
     case result do
       true -> []
